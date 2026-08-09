@@ -1,2 +1,32 @@
-# lab-1-frontend
-Frontend for lab 1
+# Saigon Route Lab Frontend
+
+Responsive React, TypeScript, Vite, and Leaflet interface for the Ho Chi Minh
+City traffic search project.
+
+## Run locally
+
+Start the backend on port 8000 first, then run:
+
+```powershell
+pnpm install
+pnpm dev
+```
+
+Open `http://127.0.0.1:5173`. Vite proxies REST and WebSocket requests to
+`http://127.0.0.1:8000`.
+
+## Main workflows
+
+- Single route search with BFS, DFS, UCS, A*, Dijkstra, or Greedy Best-First.
+- Live playback of visited, frontier, and current search nodes.
+- Side-by-side algorithm comparison with selectable map routes.
+- Nearest-neighbor and exact multi-landmark route optimization.
+- Five cost criteria and three traffic profiles.
+- Desktop and mobile layouts with route metrics and explanations.
+
+## Production check
+
+```powershell
+pnpm build
+pnpm preview
+```
