@@ -28,6 +28,7 @@ Open `http://127.0.0.1:5173`. Vite proxies REST and WebSocket requests to
 ## Production check
 
 ```powershell
+pnpm test
 pnpm build
 pnpm preview
 ```

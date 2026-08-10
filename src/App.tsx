@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeftRight,
   GitCompareArrows,
@@ -6,6 +6,7 @@ import {
   LoaderCircle,
   MapPinned,
   Navigation,
+  RefreshCw,
   Route,
   Waypoints,
 } from "lucide-react";
@@ -32,6 +33,9 @@ const DEFAULT_WAYPOINTS = [
   "fine_arts_museum",
 ];
 
+const errorMessage = (reason: unknown) => reason instanceof Error ? reason.message : String(reason);
+const isAbortError = (reason: unknown) => reason instanceof DOMException && reason.name === "AbortError";
+
 export default function App() {
   const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
   const [network, setNetwork] = useState<Record<string, unknown> | null>(null);
@@ -53,18 +57,68 @@ export default function App() {
   const [stepIndex, setStepIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [showBaseMap, setShowBaseMap] = useState(true);
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [networkWarning, setNetworkWarning] = useState<string | null>(null);
+  const activeRunId = useRef(0);
+  const activeAbort = useRef<AbortController | null>(null);
+  const initialLoadStarted = useRef(false);
+
+  const resetOutputs = useCallback(() => {
+    setSearchPayload(null);
+    setMultiPayload(null);
+    setComparison(null);
+    setSelectedCompare(null);
+    setSteps([]);
+    setStepIndex(0);
+    setPlaying(false);
+  }, []);
+
+  const cancelActiveRun = useCallback(() => {
+    activeRunId.current += 1;
+    activeAbort.current?.abort();
+    activeAbort.current = null;
+    setRunning(false);
+  }, []);
+
+  const invalidateOutputs = useCallback(() => {
+    cancelActiveRun();
+    resetOutputs();
+    setError(null);
+  }, [cancelActiveRun, resetOutputs]);
+
+  const loadNetworkOverlay = useCallback(async () => {
+    setNetworkWarning(null);
+    try {
+      setNetwork(await fetchNetwork());
+    } catch (reason) {
+      setNetwork(null);
+      setNetworkWarning(`Road network overlay unavailable: ${errorMessage(reason)}`);
+    }
+  }, []);
+
+  const loadApplication = useCallback(async () => {
+    setInitialLoading(true);
+    setError(null);
+    void loadNetworkOverlay();
+    try {
+      setBootstrap(await fetchBootstrap());
+    } catch (reason) {
+      setBootstrap(null);
+      setError(errorMessage(reason));
+    } finally {
+      setInitialLoading(false);
+    }
+  }, [loadNetworkOverlay]);
 
   useEffect(() => {
-    Promise.all([fetchBootstrap(), fetchNetwork()])
-      .then(([bootstrapData, networkData]) => {
-        setBootstrap(bootstrapData);
-        setNetwork(networkData);
-      })
-      .catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))
-      .finally(() => setLoading(false));
-  }, []);
+    if (initialLoadStarted.current) return;
+    initialLoadStarted.current = true;
+    void loadApplication();
+  }, [loadApplication]);
+
+  useEffect(() => () => activeAbort.current?.abort(), []);
 
   useEffect(() => {
     if (!playing || !steps.length) return;
@@ -82,54 +136,90 @@ export default function App() {
     }
   }, [multiMethod, waypoints.length]);
 
-  useEffect(() => {
-    setWaypoints((current) => current.filter((id) => id !== start));
-  }, [start]);
-
   const landmarkById = useMemo(
     () => new Map(bootstrap?.landmarks.map((item) => [item.id, item]) ?? []),
     [bootstrap],
   );
 
-  const activeSearchPayload = searchPayload;
-  const activeRoute: GeoJsonFeature | null =
-    activeSearchPayload?.route_geojson ?? multiPayload?.route_geojson ?? null;
+  const activeRoute: GeoJsonFeature | null = mode === "multi"
+    ? multiPayload?.route_geojson ?? null
+    : searchPayload?.route_geojson ?? null;
   const selectedLandmarks = useMemo(() => {
     const ids = mode === "multi"
       ? [start, ...waypoints, ...(end ? [end] : [])]
       : [start, goal];
-    return ids.map((id) => landmarkById.get(id)).filter(Boolean) as Landmark[];
+    return Array.from(new Set(ids))
+      .map((id) => landmarkById.get(id))
+      .filter(Boolean) as Landmark[];
   }, [mode, start, goal, waypoints, end, landmarkById]);
   const currentStep = steps.length ? steps[Math.min(stepIndex, steps.length - 1)] : null;
 
-  const resetOutputs = () => {
-    setSearchPayload(null);
-    setMultiPayload(null);
-    setComparison(null);
-    setSelectedCompare(null);
-    setSteps([]);
-    setStepIndex(0);
-    setPlaying(false);
+  const changeMode = (nextMode: Mode) => {
+    if (nextMode === mode) return;
+    invalidateOutputs();
+    setMode(nextMode);
+  };
+
+  const changeStart = (nextStart: string) => {
+    if (nextStart === start) return;
+    invalidateOutputs();
+    setStart(nextStart);
+    setWaypoints((current) => current.filter((id) => id !== nextStart));
+    setEnd((current) => current === nextStart ? "" : current);
+  };
+
+  const changeEnd = (nextEnd: string) => {
+    if (nextEnd === end) return;
+    invalidateOutputs();
+    setEnd(nextEnd);
+    if (nextEnd) setWaypoints((current) => current.filter((id) => id !== nextEnd));
+  };
+
+  const toggleWaypoint = (id: string) => {
+    invalidateOutputs();
+    setWaypoints((current) =>
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
+    );
   };
 
   const run = async () => {
-    setLoading(true);
+    activeAbort.current?.abort();
+    const controller = new AbortController();
+    const runId = activeRunId.current + 1;
+    const runMode = mode;
+    activeRunId.current = runId;
+    activeAbort.current = controller;
+    const isCurrent = () => activeRunId.current === runId && !controller.signal.aborted;
+
+    setRunning(true);
     setError(null);
     resetOutputs();
     try {
-      if (mode === "single") {
+      if (runMode === "single") {
         const streamed: SearchStep[] = [];
         const payload = await streamSearch(
           { start, goal, algorithm, criterion, traffic_profile: traffic },
-          (step) => streamed.push(step),
+          (step) => {
+            streamed.push(step);
+            if (!isCurrent()) return;
+            setSteps([...streamed]);
+            setStepIndex(streamed.length - 1);
+          },
+          { signal: controller.signal },
         );
-        setSteps(streamed);
+        if (!isCurrent()) return;
+        setSteps([...streamed]);
+        setStepIndex(Math.max(0, streamed.length - 1));
         setSearchPayload(payload);
-        setPlaying(streamed.length > 1);
-      } else if (mode === "compare") {
-        const payload = await compareRoutes({ start, goal, criterion, traffic_profile: traffic });
+      } else if (runMode === "compare") {
+        const payload = await compareRoutes(
+          { start, goal, criterion, traffic_profile: traffic },
+          controller.signal,
+        );
+        if (!isCurrent()) return;
         setComparison(payload);
-        const first = payload.algorithms.find((item) => item.request.algorithm === "dijkstra") ?? payload.algorithms[0];
+        const first = payload.algorithms.find((item) => item.request.algorithm === "dijkstra")
+          ?? payload.algorithms[0];
         setSearchPayload(first);
         setSelectedCompare(first.request.algorithm);
       } else {
@@ -142,31 +232,34 @@ export default function App() {
           criterion,
           traffic_profile: traffic,
           compare_methods: waypoints.length <= 8,
-        });
+        }, controller.signal);
+        if (!isCurrent()) return;
         setMultiPayload(payload);
       }
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      if (isCurrent() && !isAbortError(reason)) setError(errorMessage(reason));
     } finally {
-      setLoading(false);
+      if (activeRunId.current === runId) {
+        activeAbort.current = null;
+        setRunning(false);
+      }
     }
   };
 
   if (!bootstrap) {
     return (
       <div className="loading-screen">
-        <LoaderCircle className="spin" size={30} />
+        {initialLoading && <LoaderCircle className="spin" size={30} />}
         <strong>Saigon Route Lab</strong>
-        {error && <span>{error}</span>}
+        {!initialLoading && <span>{error ?? "Application data is unavailable."}</span>}
+        {!initialLoading && (
+          <button className="retry-button" onClick={() => void loadApplication()}>
+            <RefreshCw size={16} />Retry
+          </button>
+        )}
       </div>
     );
   }
-
-  const toggleWaypoint = (id: string) => {
-    setWaypoints((current) =>
-      current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
-    );
-  };
 
   return (
     <div className="app-shell">
@@ -182,21 +275,21 @@ export default function App() {
       <main className="workspace">
         <aside className="control-panel">
           <div className="mode-tabs" role="tablist">
-            <button className={mode === "single" ? "active" : ""} onClick={() => { setMode("single"); resetOutputs(); }}><Route size={16} />Single</button>
-            <button className={mode === "compare" ? "active" : ""} onClick={() => { setMode("compare"); resetOutputs(); }}><GitCompareArrows size={16} />Compare</button>
-            <button className={mode === "multi" ? "active" : ""} onClick={() => { setMode("multi"); resetOutputs(); }}><Waypoints size={16} />Multi</button>
+            <button role="tab" aria-selected={mode === "single"} className={mode === "single" ? "active" : ""} onClick={() => changeMode("single")}><Route size={16} />Single</button>
+            <button role="tab" aria-selected={mode === "compare"} className={mode === "compare" ? "active" : ""} onClick={() => changeMode("compare")}><GitCompareArrows size={16} />Compare</button>
+            <button role="tab" aria-selected={mode === "multi"} className={mode === "multi" ? "active" : ""} onClick={() => changeMode("multi")}><Waypoints size={16} />Multi</button>
           </div>
 
           <section className="control-section">
             <label htmlFor="start">Start</label>
-            <select id="start" value={start} onChange={(event) => setStart(event.target.value)}>
+            <select id="start" value={start} onChange={(event) => changeStart(event.target.value)}>
               {bootstrap.landmarks.map((landmark) => <option key={landmark.id} value={landmark.id}>{landmark.name}</option>)}
             </select>
 
             {mode !== "multi" && (
               <>
-                <div className="label-row"><label htmlFor="goal">Destination</label><button className="icon-button" title="Swap locations" onClick={() => { setStart(goal); setGoal(start); }}><ArrowLeftRight size={16} /></button></div>
-                <select id="goal" value={goal} onChange={(event) => setGoal(event.target.value)}>
+                <div className="label-row"><label htmlFor="goal">Destination</label><button className="icon-button" title="Swap locations" onClick={() => { const previousStart = start; changeStart(goal); setGoal(previousStart); }}><ArrowLeftRight size={16} /></button></div>
+                <select id="goal" value={goal} onChange={(event) => { invalidateOutputs(); setGoal(event.target.value); }}>
                   {bootstrap.landmarks.map((landmark) => <option key={landmark.id} value={landmark.id}>{landmark.name}</option>)}
                 </select>
               </>
@@ -206,7 +299,7 @@ export default function App() {
           {mode === "single" && (
             <section className="control-section">
               <label htmlFor="algorithm">Algorithm</label>
-              <select id="algorithm" value={algorithm} onChange={(event) => setAlgorithm(event.target.value)}>
+              <select id="algorithm" value={algorithm} onChange={(event) => { invalidateOutputs(); setAlgorithm(event.target.value); }}>
                 {Object.entries(bootstrap.algorithms).map(([key, item]) => <option key={key} value={key}>{item.label}</option>)}
               </select>
               <div className="algorithm-caption"><strong>{bootstrap.algorithms[algorithm].description}</strong><span>{bootstrap.algorithms[algorithm].guarantee}</span></div>
@@ -217,7 +310,7 @@ export default function App() {
             <section className="control-section multi-controls">
               <div className="label-row"><label>Waypoints</label><span>{waypoints.length}/8 exact</span></div>
               <div className="waypoint-list">
-                {bootstrap.landmarks.filter((item) => item.id !== start).map((landmark) => (
+                {bootstrap.landmarks.filter((item) => item.id !== start && item.id !== end).map((landmark) => (
                   <label className="check-row" key={landmark.id}>
                     <input type="checkbox" checked={waypoints.includes(landmark.id)} onChange={() => toggleWaypoint(landmark.id)} />
                     <span>{landmark.name}</span>
@@ -225,16 +318,16 @@ export default function App() {
                 ))}
               </div>
               <label htmlFor="multi-method">Method</label>
-              <select id="multi-method" value={multiMethod} onChange={(event) => setMultiMethod(event.target.value)}>
+              <select id="multi-method" value={multiMethod} onChange={(event) => { invalidateOutputs(); setMultiMethod(event.target.value); }}>
                 <option value="nearest_neighbor">Nearest Neighbor</option>
                 <option value="exact_bruteforce" disabled={waypoints.length > 8}>Exact Brute Force</option>
               </select>
               <label htmlFor="end">Fixed end</label>
-              <select id="end" value={end} onChange={(event) => setEnd(event.target.value)} disabled={returnToStart}>
+              <select id="end" value={end} onChange={(event) => changeEnd(event.target.value)} disabled={returnToStart}>
                 <option value="">None</option>
                 {bootstrap.landmarks.filter((item) => item.id !== start).map((landmark) => <option key={landmark.id} value={landmark.id}>{landmark.name}</option>)}
               </select>
-              <label className="toggle-row"><input type="checkbox" checked={returnToStart} onChange={(event) => { setReturnToStart(event.target.checked); if (event.target.checked) setEnd(""); }} /><span>Return to start</span></label>
+              <label className="toggle-row"><input type="checkbox" checked={returnToStart} onChange={(event) => { invalidateOutputs(); setReturnToStart(event.target.checked); if (event.target.checked) setEnd(""); }} /><span>Return to start</span></label>
             </section>
           )}
 
@@ -242,19 +335,27 @@ export default function App() {
             <label>Optimization</label>
             <div className="criterion-grid">
               {Object.keys(bootstrap.cost_presets).map((key) => (
-                <button key={key} className={criterion === key ? "active" : ""} onClick={() => setCriterion(key)}>{key.replace("_", " ")}</button>
+                <button key={key} className={criterion === key ? "active" : ""} onClick={() => { invalidateOutputs(); setCriterion(key); }}>{key.replace("_", " ")}</button>
               ))}
             </div>
             <label htmlFor="traffic">Traffic profile</label>
-            <select id="traffic" value={traffic} onChange={(event) => setTraffic(event.target.value)}>
+            <select id="traffic" value={traffic} onChange={(event) => { invalidateOutputs(); setTraffic(event.target.value); }}>
               {Object.keys(bootstrap.traffic_profiles).map((key) => <option key={key} value={key}>{key.replace("_", " ")}</option>)}
             </select>
           </section>
 
+          {networkWarning && (
+            <div className="warning-banner">
+              <span>{networkWarning}</span>
+              <button onClick={() => void loadNetworkOverlay()}>
+                <RefreshCw size={14} />Retry overlay
+              </button>
+            </div>
+          )}
           {error && <div className="error-banner">{error}</div>}
-          <button className="run-button" onClick={run} disabled={loading || (mode === "multi" && !waypoints.length)}>
-            {loading ? <LoaderCircle className="spin" size={18} /> : <Navigation size={18} />}
-            {loading ? "Running" : mode === "compare" ? "Compare algorithms" : mode === "multi" ? "Optimize route" : "Find route"}
+          <button className="run-button" onClick={() => void run()} disabled={running || (mode === "multi" && !waypoints.length)}>
+            {running ? <LoaderCircle className="spin" size={18} /> : <Navigation size={18} />}
+            {running ? "Running" : mode === "compare" ? "Compare algorithms" : mode === "multi" ? "Optimize route" : "Find route"}
           </button>
         </aside>
 
@@ -288,9 +389,9 @@ export default function App() {
 
         <ResultsPanel
           bootstrap={bootstrap}
-          searchPayload={searchPayload}
-          multiPayload={multiPayload}
-          comparison={comparison}
+          searchPayload={mode === "multi" ? null : searchPayload}
+          multiPayload={mode === "multi" ? multiPayload : null}
+          comparison={mode === "compare" ? comparison : null}
           selectedCompare={selectedCompare}
           onSelectCompare={(payload) => { setSearchPayload(payload); setSelectedCompare(payload.request.algorithm); }}
           steps={steps}

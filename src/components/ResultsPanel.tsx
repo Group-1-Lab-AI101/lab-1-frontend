@@ -60,7 +60,7 @@ export default function ResultsPanel(props: ResultsPanelProps) {
         </span>
       </div>
 
-      {!metrics && !comparison && (
+      {!metrics && !comparison && !steps.length && (
         <div className="empty-results">
           <Search size={28} />
           <strong>Network ready</strong>
@@ -86,7 +86,9 @@ export default function ResultsPanel(props: ResultsPanelProps) {
             <span><b>{searchPayload.result.generated_nodes}</b> generated</span>
           </div>
           <section className="result-section">
-            <div className="section-heading"><span>Path found</span></div>
+            <div className="section-heading">
+              <span>{searchPayload.result.success ? "Path found" : "No path found"}</span>
+            </div>
             <p className="route-endpoints">
               <strong>{searchPayload.request.start.name}</strong>
               <span>to</span>
@@ -96,10 +98,12 @@ export default function ResultsPanel(props: ResultsPanelProps) {
               {routeRoads.slice(0, 7).map((name) => <span key={name}>{name}</span>)}
               {routeRoads.length > 7 && <span>+{routeRoads.length - 7} roads</span>}
             </div>
-            <details className="node-path">
-              <summary>Graph node path</summary>
-              <code>{searchPayload.result.path.join(" -> ")}</code>
-            </details>
+            {searchPayload.result.path.length > 0 && (
+              <details className="node-path">
+                <summary>Graph node path</summary>
+                <code>{searchPayload.result.path.join(" -> ")}</code>
+              </details>
+            )}
           </section>
           <section className="result-section">
             <div className="section-heading"><span>Why this route</span></div>
@@ -133,14 +137,17 @@ export default function ResultsPanel(props: ResultsPanelProps) {
               </div>
             </section>
           )}
-          <TraceControls
-            steps={steps}
-            index={stepIndex}
-            playing={playing}
-            onPlayingChange={onPlayingChange}
-            onIndexChange={onStepIndexChange}
-          />
         </>
+      )}
+
+      {steps.length > 0 && (
+        <TraceControls
+          steps={steps}
+          index={stepIndex}
+          playing={playing}
+          onPlayingChange={onPlayingChange}
+          onIndexChange={onStepIndexChange}
+        />
       )}
 
       {multiPayload && (
@@ -148,8 +155,23 @@ export default function ResultsPanel(props: ResultsPanelProps) {
           <div className="section-heading"><span>Optimized visiting order</span><Waypoints size={16} /></div>
           <p className="route-endpoints">
             <strong>Start: {multiPayload.request.start.name}</strong>
-            <span>{multiPayload.request.method.replace("_", " ")}</span>
+            <span>to</span>
+            <strong>
+              {multiPayload.request.return_to_start
+                ? multiPayload.request.start.name
+                : multiPayload.request.end?.name ?? "Flexible end"}
+            </strong>
           </p>
+          <div className="multi-constraints" aria-label="Multi-route constraints">
+            <div>
+              <span>Fixed end</span>
+              <strong>{multiPayload.request.end?.name ?? "None"}</strong>
+            </div>
+            <div>
+              <span>Route closure</span>
+              <strong>{multiPayload.request.return_to_start ? "Return to start" : "Open route"}</strong>
+            </div>
+          </div>
           <div className="requested-order">
             <strong>Requested order</strong>
             <span>{multiPayload.request.waypoints.map((item) => item.name).join(" -> ")}</span>

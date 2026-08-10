@@ -25,6 +25,9 @@ interface MapViewProps {
   showBaseMap?: boolean;
 }
 
+export const routeRenderKey = (route: GeoJsonFeature) =>
+  JSON.stringify(route.geometry);
+
 function FitRoute({ route, selected }: { route: GeoJsonFeature | null; selected: Landmark[] }) {
   const map = useMap();
   useEffect(() => {
@@ -103,7 +106,7 @@ export default function MapView({
       })}
       {route && route.geometry.coordinates.length > 0 && (
         <GeoJSON
-          key={JSON.stringify(route.geometry.coordinates.slice(0, 2))}
+          key={routeRenderKey(route)}
           data={route as never}
           style={{ color: "#d43d2f", weight: 5, opacity: 0.95 }}
         />
