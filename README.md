@@ -21,6 +21,7 @@ Open `http://127.0.0.1:5173`. Vite proxies REST and WebSocket requests to
 - Live playback of visited, frontier, and current search nodes.
 - Side-by-side algorithm comparison with selectable map routes.
 - Nearest-neighbor and exact multi-landmark route optimization.
+- Interactive map with road network, district boundary polygon, and OpenStreetMap background tile map toggle button.
 - Five cost criteria and three traffic profiles.
 - Desktop and mobile layouts with route metrics and explanations.
 

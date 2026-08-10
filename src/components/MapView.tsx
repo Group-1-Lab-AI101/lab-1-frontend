@@ -22,6 +22,7 @@ interface MapViewProps {
   route: GeoJsonFeature | null;
   currentStep: SearchStep | null;
   selectedLandmarks: Landmark[];
+  showBaseMap?: boolean;
 }
 
 function FitRoute({ route, selected }: { route: GeoJsonFeature | null; selected: Landmark[] }) {
@@ -43,6 +44,7 @@ export default function MapView({
   route,
   currentStep,
   selectedLandmarks,
+  showBaseMap = true,
 }: MapViewProps) {
   const selectedIds = new Set(selectedLandmarks.map((item) => item.id));
   const visited = Array.from(new Set(currentStep?.visited ?? [])).slice(-120);
@@ -62,10 +64,19 @@ export default function MapView({
       preferCanvas
       zoomControl
     >
-      <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-      />
+      {showBaseMap && (
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+      )}
+      {bootstrap.boundary && (
+        <GeoJSON
+          key="boundary-layer"
+          data={bootstrap.boundary as never}
+          style={{ color: "#1f6b49", weight: 1.5, dashArray: "6 6", opacity: 0.6, fillOpacity: 0.04 }}
+        />
+      )}
       {network && (
         <GeoJSON
           data={network as never}

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeftRight,
   GitCompareArrows,
+  Layers,
   LoaderCircle,
   MapPinned,
   Navigation,
@@ -51,6 +52,7 @@ export default function App() {
   const [steps, setSteps] = useState<SearchStep[]>([]);
   const [stepIndex, setStepIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [showBaseMap, setShowBaseMap] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -257,8 +259,25 @@ export default function App() {
         </aside>
 
         <section className="map-workspace">
-          <MapView bootstrap={bootstrap} network={network} route={activeRoute} currentStep={currentStep} selectedLandmarks={selectedLandmarks} />
+          <button
+            className={`map-overlay-toggle ${showBaseMap ? "active" : ""}`}
+            onClick={() => setShowBaseMap((prev) => !prev)}
+            title="Toggle OpenStreetMap background map layer"
+            aria-label="Toggle OpenStreetMap background map layer"
+          >
+            <Layers size={16} />
+            <span>{showBaseMap ? "OpenStreetMap On" : "OpenStreetMap Off"}</span>
+          </button>
+          <MapView
+            bootstrap={bootstrap}
+            network={network}
+            route={activeRoute}
+            currentStep={currentStep}
+            selectedLandmarks={selectedLandmarks}
+            showBaseMap={showBaseMap}
+          />
           <div className="map-legend">
+            <span><i className="legend-line boundary" />Boundary</span>
             <span><i className="legend-line road" />Road network</span>
             <span><i className="legend-line route" />Selected route</span>
             <span><i className="legend-line access" />Landmark access</span>

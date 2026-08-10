@@ -62,9 +62,47 @@ select:disabled { color: #8c9690; background: #ecefed; }
 .run-button:disabled { cursor: not-allowed; background: #9da8a2; }
 .error-banner { padding: 9px 10px; margin-top: 12px; border: 1px solid #dca09a; border-radius: 5px; color: #852b23; background: #fff0ee; font-size: 12px; }
 
+.map-overlay-toggle {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1px solid #c9d0cc;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 2px 8px rgba(17, 32, 24, 0.14);
+  color: #33423a;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.map-overlay-toggle:hover {
+  background: #ffffff;
+  border-color: #1f6b49;
+  color: #1f6b49;
+  box-shadow: 0 4px 12px rgba(17, 32, 24, 0.18);
+}
+
+.map-overlay-toggle.active {
+  background: #1f6b49;
+  color: #ffffff;
+  border-color: #1a593d;
+}
+
+.map-overlay-toggle.active:hover {
+  background: #19563b;
+}
+
 .map-legend { position: absolute; z-index: 500; left: 12px; bottom: 24px; display: flex; flex-wrap: wrap; gap: 10px; max-width: calc(100% - 24px); padding: 8px 10px; border: 1px solid #c9d0cc; border-radius: 5px; background: rgba(255,255,255,0.94); box-shadow: 0 2px 8px rgba(17, 32, 24, 0.14); color: #435048; font-size: 10px; }
 .map-legend span { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
 .legend-line { width: 19px; height: 3px; display: inline-block; }
+.legend-line.boundary { height: 0; border-top: 2px dashed #1f6b49; }
 .legend-line.road { background: #7d8982; }
 .legend-line.route { height: 4px; background: #d43d2f; }
 .legend-line.access { height: 0; border-top: 2px dashed #1f6b49; }
