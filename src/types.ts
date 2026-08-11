@@ -7,6 +7,12 @@ export interface Landmark {
   description: string;
   latitude: number;
   longitude: number;
+  routing_latitude: number;
+  routing_longitude: number;
+  access_kind: string;
+  access_label: string;
+  access_source: string;
+  access_road: string;
   snapped_node: string;
   snapped_distance_m: number;
 }

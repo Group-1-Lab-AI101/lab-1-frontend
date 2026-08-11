@@ -109,6 +109,8 @@ select:disabled { color: #8c9690; background: #ecefed; }
 .legend-line.route { height: 4px; background: #d43d2f; }
 .legend-line.access { height: 0; border-top: 2px dashed #1f6b49; }
 .legend-dot { width: 8px; height: 8px; display: inline-block; border-radius: 50%; }
+.legend-dot.landmark { background: #1f7a50; }
+.legend-dot.access { background: #f0aa2f; border: 1px solid #7b4d08; }
 .legend-dot.visited { background: #3f8dd8; }
 .legend-dot.frontier { background: #f0aa2f; }
 

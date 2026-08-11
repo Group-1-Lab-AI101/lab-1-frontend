@@ -29,6 +29,12 @@ export default function TraceControls({
     .slice(0, 5);
   const formatDetail = (value: unknown) =>
     typeof value === "number" ? value.toFixed(3).replace(/\.?0+$/, "") : String(value);
+  const visitedCount = typeof current.details.visited_count === "number"
+    ? current.details.visited_count
+    : current.visited.length;
+  const frontierCount = typeof current.details.frontier_count === "number"
+    ? current.details.frontier_count
+    : current.frontier.length;
   return (
     <section className="trace-section" aria-label="Search animation">
       <div className="section-heading">
@@ -40,8 +46,8 @@ export default function TraceControls({
         <span>{current.current_node ?? "-"}</span>
       </div>
       <div className="trace-counts">
-        <span><b>{current.visited.length}</b> visited</span>
-        <span><b>{current.frontier.length}</b> frontier</span>
+        <span><b>{visitedCount}</b> visited</span>
+        <span><b>{frontierCount}</b> frontier</span>
       </div>
       {details.length > 0 && (
         <dl className="trace-details">

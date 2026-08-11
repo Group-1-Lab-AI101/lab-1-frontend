@@ -13,6 +13,12 @@ const landmark = (id: string, name: string, index: number): Landmark => ({
   description: name,
   latitude: 10.77 + index * 0.001,
   longitude: 106.69 + index * 0.001,
+  routing_latitude: 10.77 + index * 0.001,
+  routing_longitude: 106.69 + index * 0.001,
+  access_kind: "nearest_road",
+  access_label: "Nearest road access",
+  access_source: "Test fixture",
+  access_road: `Road ${index}`,
   snapped_node: `node-${index}`,
   snapped_distance_m: 5,
 });

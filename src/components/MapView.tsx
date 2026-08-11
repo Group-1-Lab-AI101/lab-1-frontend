@@ -32,9 +32,14 @@ function FitRoute({ route, selected }: { route: GeoJsonFeature | null; selected:
   const map = useMap();
   useEffect(() => {
     const routeCoordinates = route?.geometry.coordinates ?? [];
-    const points = routeCoordinates.length
-      ? routeCoordinates.map(([longitude, latitude]) => [latitude, longitude] as [number, number])
-      : selected.map((landmark) => [landmark.latitude, landmark.longitude] as [number, number]);
+    const routePoints = routeCoordinates.map(
+      ([longitude, latitude]) => [latitude, longitude] as [number, number],
+    );
+    const landmarkPoints = selected.flatMap((landmark) => [
+      [landmark.latitude, landmark.longitude] as [number, number],
+      [landmark.routing_latitude, landmark.routing_longitude] as [number, number],
+    ]);
+    const points = [...routePoints, ...landmarkPoints];
     if (points.length > 1) map.fitBounds(L.latLngBounds(points), { padding: [32, 32] });
     else if (points.length === 1) map.setView(points[0], 15);
   }, [map, route, selected]);
@@ -86,22 +91,69 @@ export default function MapView({
           style={{ color: "#7d8982", weight: 1.2, opacity: 0.48 }}
         />
       )}
-      {selectedLandmarks.map((landmark) => {
+      {selectedLandmarks.flatMap((landmark) => {
         const snapped = coordinates[landmark.snapped_node];
-        return snapped && landmark.snapped_distance_m > 1 ? (
-          <Polyline
-            key={`access-${landmark.id}`}
-            positions={[
-              [landmark.latitude, landmark.longitude],
-              snapped,
-            ]}
+        const center: [number, number] = [landmark.latitude, landmark.longitude];
+        const access: [number, number] = [
+          landmark.routing_latitude,
+          landmark.routing_longitude,
+        ];
+        const hasDistinctAccess =
+          Math.abs(center[0] - access[0]) > 0.000001
+          || Math.abs(center[1] - access[1]) > 0.000001;
+        const lines = [];
+        if (hasDistinctAccess) {
+          lines.push(
+            <Polyline
+              key={`venue-access-${landmark.id}`}
+              positions={[center, access]}
+              pathOptions={{
+                color: "#1f6b49",
+                dashArray: "4 5",
+                opacity: 0.72,
+                weight: 2,
+              }}
+            />,
+          );
+        }
+        if (snapped && landmark.snapped_distance_m > 1) {
+          lines.push(
+            <Polyline
+              key={`road-access-${landmark.id}`}
+              positions={[access, snapped]}
+              pathOptions={{
+                color: "#b97810",
+                dashArray: "2 4",
+                opacity: 0.82,
+                weight: 2,
+              }}
+            />,
+          );
+        }
+        return lines;
+      })}
+      {selectedLandmarks.map((landmark) => {
+        const hasDistinctAccess =
+          Math.abs(landmark.latitude - landmark.routing_latitude) > 0.000001
+          || Math.abs(landmark.longitude - landmark.routing_longitude) > 0.000001;
+        return hasDistinctAccess ? (
+          <CircleMarker
+            key={`routing-access-${landmark.id}`}
+            center={[landmark.routing_latitude, landmark.routing_longitude]}
+            radius={4.5}
             pathOptions={{
-              color: "#1f6b49",
-              dashArray: "4 5",
-              opacity: 0.72,
+              color: "#7b4d08",
+              fillColor: "#f0aa2f",
+              fillOpacity: 1,
               weight: 2,
             }}
-          />
+          >
+            <Tooltip direction="top">
+              <strong>{landmark.access_label}</strong>
+              <br />
+              {landmark.access_road}
+            </Tooltip>
+          </CircleMarker>
         ) : null;
       })}
       {route && route.geometry.coordinates.length > 0 && (
@@ -150,7 +202,7 @@ export default function MapView({
           <CircleMarker
             key={landmark.id}
             center={[landmark.latitude, landmark.longitude]}
-            radius={active ? 7 : 4}
+            radius={active ? 6 : 3.5}
             pathOptions={{
               color: active ? "#123b2b" : "#ffffff",
               fillColor: active ? "#1f7a50" : "#293b33",
@@ -161,7 +213,7 @@ export default function MapView({
             <Tooltip direction="top">
               <strong>{landmark.name}</strong>
               <br />
-              {landmark.category}
+              {landmark.category} · location center
             </Tooltip>
           </CircleMarker>
         );

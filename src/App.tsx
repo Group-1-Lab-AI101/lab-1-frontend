@@ -381,7 +381,9 @@ export default function App() {
             <span><i className="legend-line boundary" />Boundary</span>
             <span><i className="legend-line road" />Road network</span>
             <span><i className="legend-line route" />Selected route</span>
-            <span><i className="legend-line access" />Landmark access</span>
+            <span><i className="legend-dot landmark" />Landmark center</span>
+            <span><i className="legend-dot access" />Entrance / road access</span>
+            <span><i className="legend-line access" />Access connector</span>
             <span><i className="legend-dot visited" />Visited</span>
             <span><i className="legend-dot frontier" />Frontier</span>
           </div>
