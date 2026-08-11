@@ -5,11 +5,18 @@ City traffic search project.
 
 ## Run locally
 
-Start the backend on port 8000 first, then run:
+Start the backend on port 8000 first, then run with pnpm:
 
 ```powershell
 pnpm install
 pnpm dev
+```
+
+or with npm:
+
+```powershell
+npm install
+npm run dev
 ```
 
 Open `http://127.0.0.1:5173`. Vite proxies REST and WebSocket requests to
@@ -27,8 +34,18 @@ Open `http://127.0.0.1:5173`. Vite proxies REST and WebSocket requests to
 
 ## Production check
 
+With pnpm:
+
 ```powershell
 pnpm test
 pnpm build
 pnpm preview
+```
+
+or with npm:
+
+```powershell
+npm test
+npm run build
+npm run preview
 ```

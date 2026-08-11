@@ -3,5 +3,7 @@ dist/
 *.local
 *.swp
 *.tsbuildinfo
+*.swp
+*.swo
 vite.config.js
 vite.config.d.ts

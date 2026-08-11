@@ -85,7 +85,7 @@ export function fetchNetwork(): Promise<Record<string, unknown>> {
 }
 
 export function compareRoutes(
-  request: Omit<SearchRequest, "algorithm">,
+  request: Omit<SearchRequest, "algorithm" | "capture_trace">,
   signal?: AbortSignal,
 ): Promise<ComparePayload> {
   return requestJson<ComparePayload>("/api/compare", {
