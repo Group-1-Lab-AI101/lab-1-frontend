@@ -26,6 +26,18 @@ interface ResultsPanelProps {
 const formatNumber = (value: number | null | undefined, digits = 2) =>
   value == null ? "-" : value.toFixed(digits);
 
+const multiMethodLabel = (method: string) => ({
+  nearest_neighbor: "Nearest Neighbor (approximate)",
+  exact_bruteforce: "Exact Brute Force",
+  held_karp: "Held–Karp Exact",
+}[method] ?? method.replaceAll("_", " "));
+
+const optimalityLabel = (value: string) => ({
+  approximate_not_guaranteed: "Approximate route — fast, but not guaranteed globally optimal.",
+  optimal_for_reduced_pairwise_problem: "Globally optimal visiting order for the computed pairwise route costs.",
+  not_applicable: "Optimality is not applicable because no complete route was found.",
+}[value] ?? value.replaceAll("_", " "));
+
 export default function ResultsPanel(props: ResultsPanelProps) {
   const {
     bootstrap,
@@ -42,6 +54,32 @@ export default function ResultsPanel(props: ResultsPanelProps) {
   } = props;
 
   const metrics = searchPayload?.result ?? multiPayload?.result;
+  const runtimeLabel = searchPayload && steps.length > 0
+    ? "Runtime + trace"
+    : "Runtime";
+  const lastVisitedLandmark = multiPayload?.visiting_landmarks[
+    Math.max(0, (multiPayload?.visiting_landmarks.length ?? 1) - 1)
+  ];
+  const multiEndName = multiPayload
+    ? multiPayload.request.return_to_start
+      ? multiPayload.request.start.name
+      : multiPayload.request.end?.name
+        ?? lastVisitedLandmark?.name
+        ?? multiPayload.request.start.name
+    : "";
+  const constrainedFinalStop = multiPayload
+    ? multiPayload.request.return_to_start
+      ? multiPayload.request.start
+      : multiPayload.request.end
+    : null;
+  const displayedMultiStops = multiPayload
+    ? [
+        ...multiPayload.visiting_landmarks.filter(
+          (landmark) => landmark.id !== constrainedFinalStop?.id,
+        ),
+        ...(constrainedFinalStop ? [constrainedFinalStop] : []),
+      ]
+    : [];
   const routeRoads = searchPayload
     ? Array.from(
         new Set(
@@ -74,7 +112,9 @@ export default function ResultsPanel(props: ResultsPanelProps) {
           <div className="metric"><Route size={16} /><span>Distance</span><strong>{formatNumber(metrics.total_distance_km)} km</strong></div>
           <div className="metric"><Clock3 size={16} /><span>Time</span><strong>{formatNumber(metrics.total_time_min, 1)} min</strong></div>
           <div className="metric"><Gauge size={16} /><span>Cost</span><strong>{formatNumber(metrics.total_cost)}</strong></div>
-          <div className="metric"><Search size={16} /><span>Runtime</span><strong>{formatNumber(metrics.runtime_ms, 2)} ms</strong></div>
+          <div className="metric" title={runtimeLabel === "Runtime + trace" ? "Includes trace-event generation for the animation" : undefined}>
+            <Search size={16} /><span>{runtimeLabel}</span><strong>{formatNumber(metrics.runtime_ms, 2)} ms</strong>
+          </div>
         </div>
       )}
 
@@ -157,34 +197,54 @@ export default function ResultsPanel(props: ResultsPanelProps) {
             <strong>Start: {multiPayload.request.start.name}</strong>
             <span>to</span>
             <strong>
-              {multiPayload.request.return_to_start
-                ? multiPayload.request.start.name
-                : multiPayload.request.end?.name ?? "Flexible end"}
+              {multiEndName}
             </strong>
           </p>
           <div className="multi-constraints" aria-label="Multi-route constraints">
             <div>
-              <span>Fixed end</span>
-              <strong>{multiPayload.request.end?.name ?? "None"}</strong>
+              <span>End rule</span>
+              <strong>
+                {multiPayload.request.return_to_start
+                  ? `Start: ${multiPayload.request.start.name}`
+                  : multiPayload.request.end
+                    ? `Fixed: ${multiPayload.request.end.name}`
+                    : "Flexible end"}
+              </strong>
             </div>
             <div>
               <span>Route closure</span>
-              <strong>{multiPayload.request.return_to_start ? "Return to start" : "Open route"}</strong>
+              <strong>{multiPayload.request.return_to_start ? "Closed loop" : "Open route"}</strong>
             </div>
           </div>
+          <div className="multi-method-summary">
+            <span>Method</span>
+            <strong>{multiMethodLabel(multiPayload.request.method)}</strong>
+          </div>
           <div className="requested-order">
-            <strong>Requested order</strong>
+            <strong>Selected waypoints</strong>
             <span>{multiPayload.request.waypoints.map((item) => item.name).join(" -> ")}</span>
           </div>
           <ol className="visit-order">
-            {multiPayload.visiting_landmarks.map((landmark, index) => (
+            {displayedMultiStops.map((landmark, index) => (
               <li key={`${landmark.id}-${index}`}>
                 <span>{index + 1}</span>
-                <div><strong>{landmark.name}</strong><small>{landmark.category}</small></div>
+                <div>
+                  <strong>{landmark.name}</strong>
+                  <small>
+                    {landmark.category}
+                    {constrainedFinalStop?.id === landmark.id
+                      ? multiPayload.request.return_to_start
+                        ? " · return"
+                        : " · fixed end"
+                      : ""}
+                  </small>
+                </div>
               </li>
             ))}
           </ol>
-          <p className="optimality-note">{multiPayload.explanation.optimality_note}</p>
+          <p className="optimality-note">
+            {optimalityLabel(multiPayload.explanation.optimality_note)}
+          </p>
           {multiPayload.comparison && (
             <div className="multi-comparison">
               <strong>Method comparison</strong>

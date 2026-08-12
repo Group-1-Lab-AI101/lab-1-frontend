@@ -13,6 +13,7 @@ import type {
   Bootstrap,
   GeoJsonFeature,
   Landmark,
+  RouteSegment,
   SearchStep,
 } from "../types";
 
@@ -23,10 +24,28 @@ interface MapViewProps {
   currentStep: SearchStep | null;
   selectedLandmarks: Landmark[];
   showBaseMap?: boolean;
+  routeSegments?: RouteSegment[];
+  colorRouteByConditions?: boolean;
 }
 
 export const routeRenderKey = (route: GeoJsonFeature) =>
   JSON.stringify(route.geometry);
+
+export const MINIMAL_BASEMAP_URL =
+  "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
+
+const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
+
+export const routeConditionSeverity = (segment: Pick<RouteSegment, "congestion" | "risk">) => {
+  const congestion = clamp01((segment.congestion - 1) / 4);
+  const risk = clamp01(segment.risk / 2.2);
+  return 0.75 * congestion + 0.25 * risk;
+};
+
+export const routeConditionColor = (segment: Pick<RouteSegment, "congestion" | "risk">) => {
+  const hue = 120 * (1 - routeConditionSeverity(segment));
+  return `hsl(${hue.toFixed(1)} 72% 42%)`;
+};
 
 function FitRoute({ route, selected }: { route: GeoJsonFeature | null; selected: Landmark[] }) {
   const map = useMap();
@@ -53,9 +72,11 @@ export default function MapView({
   currentStep,
   selectedLandmarks,
   showBaseMap = true,
+  routeSegments = [],
+  colorRouteByConditions = false,
 }: MapViewProps) {
   const selectedIds = new Set(selectedLandmarks.map((item) => item.id));
-  const visited = Array.from(new Set(currentStep?.visited ?? [])).slice(-120);
+  const visited = Array.from(new Set(currentStep?.visited ?? []));
   const frontier = Array.from(
     new Map(
       (currentStep?.frontier ?? []).map((entry) => [entry.node, entry]),
@@ -74,8 +95,11 @@ export default function MapView({
     >
       {showBaseMap && (
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+          url={MINIMAL_BASEMAP_URL}
+          subdomains="abcd"
+          maxZoom={20}
+          opacity={0.88}
         />
       )}
       {bootstrap.boundary && (
@@ -88,7 +112,7 @@ export default function MapView({
       {network && (
         <GeoJSON
           data={network as never}
-          style={{ color: "#7d8982", weight: 1.2, opacity: 0.48 }}
+          style={{ color: "#7d8982", weight: 0.9, opacity: 0.3 }}
         />
       )}
       {selectedLandmarks.flatMap((landmark) => {
@@ -160,9 +184,38 @@ export default function MapView({
         <GeoJSON
           key={routeRenderKey(route)}
           data={route as never}
-          style={{ color: "#d43d2f", weight: 5, opacity: 0.95 }}
+          style={{
+            color: colorRouteByConditions ? "#aab3ae" : "#d43d2f",
+            weight: colorRouteByConditions ? 6 : 5,
+            opacity: colorRouteByConditions ? 0.62 : 0.95,
+          }}
         />
       )}
+      {colorRouteByConditions && routeSegments.map((segment, index) => {
+        if (segment.geometry.length < 2) return null;
+        const positions = segment.geometry.map(
+          ([longitude, latitude]) => [latitude, longitude] as [number, number],
+        );
+        return (
+          <Polyline
+            key={`condition-route-${segment.from}-${segment.to}-${index}`}
+            positions={positions}
+            pathOptions={{
+              color: routeConditionColor(segment),
+              weight: 5,
+              opacity: 0.96,
+              lineCap: "round",
+              lineJoin: "round",
+            }}
+          >
+            <Tooltip sticky>
+              <strong>{segment.name}</strong>
+              <br />
+              Congestion: {segment.congestion.toFixed(1)} / 5 · Risk: {segment.risk.toFixed(1)}
+            </Tooltip>
+          </Polyline>
+        );
+      })}
 
       {visited.map((node) => {
         const position = coordinates[node];

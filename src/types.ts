@@ -29,6 +29,7 @@ export interface SearchStep {
   current_node: string | null;
   frontier: Array<{ node: string; priority: number }>;
   visited: string[];
+  visited_delta?: string[];
   details: Record<string, unknown>;
 }
 
@@ -84,6 +85,7 @@ export interface RouteSegment {
   risk: number;
   cost: number;
   oneway: boolean;
+  geometry: number[][];
 }
 
 export interface SearchPayload {
@@ -134,6 +136,7 @@ export interface MultiPayload {
   result: MultiMethodResult;
   visiting_landmarks: Landmark[];
   route_geojson: GeoJsonFeature;
+  route_segments: RouteSegment[];
   comparison: {
     nearest_neighbor: MultiMethodResult;
     exact_bruteforce: MultiMethodResult;

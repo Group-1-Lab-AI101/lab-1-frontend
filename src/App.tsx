@@ -23,6 +23,7 @@ import type {
   SearchPayload,
   SearchStep,
 } from "./types";
+import { stepWithVisitedHistory } from "./trace";
 
 const DEFAULT_START = "notre_dame_cathedral";
 const DEFAULT_GOAL = "saigon_zoo";
@@ -32,6 +33,8 @@ const DEFAULT_WAYPOINTS = [
   "bach_dang_wharf",
   "fine_arts_museum",
 ];
+const BRUTE_FORCE_LIMIT = 8;
+const HELD_KARP_LIMIT = 12;
 
 const errorMessage = (reason: unknown) => reason instanceof Error ? reason.message : String(reason);
 const isAbortError = (reason: unknown) => reason instanceof DOMException && reason.name === "AbortError";
@@ -46,7 +49,7 @@ export default function App() {
   const [criterion, setCriterion] = useState("balanced");
   const [traffic, setTraffic] = useState("normal");
   const [waypoints, setWaypoints] = useState<string[]>(DEFAULT_WAYPOINTS);
-  const [multiMethod, setMultiMethod] = useState("nearest_neighbor");
+  const [multiMethod, setMultiMethod] = useState("held_karp");
   const [returnToStart, setReturnToStart] = useState(false);
   const [end, setEnd] = useState("");
   const [searchPayload, setSearchPayload] = useState<SearchPayload | null>(null);
@@ -57,6 +60,7 @@ export default function App() {
   const [stepIndex, setStepIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [showBaseMap, setShowBaseMap] = useState(true);
+  const [colorRouteByConditions, setColorRouteByConditions] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -131,7 +135,10 @@ export default function App() {
   }, [playing, stepIndex, steps.length]);
 
   useEffect(() => {
-    if (waypoints.length > 8 && multiMethod === "exact_bruteforce") {
+    const exceedsMethodLimit =
+      (multiMethod === "exact_bruteforce" && waypoints.length > BRUTE_FORCE_LIMIT)
+      || (multiMethod === "held_karp" && waypoints.length > HELD_KARP_LIMIT);
+    if (exceedsMethodLimit) {
       setMultiMethod("nearest_neighbor");
     }
   }, [multiMethod, waypoints.length]);
@@ -141,9 +148,17 @@ export default function App() {
     [bootstrap],
   );
 
+  const traceReachedFinalStep = steps.length === 0 || stepIndex >= steps.length - 1;
   const activeRoute: GeoJsonFeature | null = mode === "multi"
     ? multiPayload?.route_geojson ?? null
-    : searchPayload?.route_geojson ?? null;
+    : traceReachedFinalStep
+      ? searchPayload?.route_geojson ?? null
+      : null;
+  const activeRouteSegments = activeRoute
+    ? mode === "multi"
+      ? multiPayload?.route_segments ?? []
+      : searchPayload?.route_segments ?? []
+    : [];
   const selectedLandmarks = useMemo(() => {
     const ids = mode === "multi"
       ? [start, ...waypoints, ...(end ? [end] : [])]
@@ -152,7 +167,10 @@ export default function App() {
       .map((id) => landmarkById.get(id))
       .filter(Boolean) as Landmark[];
   }, [mode, start, goal, waypoints, end, landmarkById]);
-  const currentStep = steps.length ? steps[Math.min(stepIndex, steps.length - 1)] : null;
+  const currentStep = useMemo(
+    () => stepWithVisitedHistory(steps, stepIndex),
+    [steps, stepIndex],
+  );
 
   const changeMode = (nextMode: Mode) => {
     if (nextMode === mode) return;
@@ -173,6 +191,17 @@ export default function App() {
     invalidateOutputs();
     setEnd(nextEnd);
     if (nextEnd) setWaypoints((current) => current.filter((id) => id !== nextEnd));
+  };
+
+  const toggleFixedEnd = (enabled: boolean) => {
+    if (!enabled) {
+      changeEnd("");
+      return;
+    }
+    const candidate = [...waypoints].reverse().find((id) => id !== start)
+      ?? bootstrap?.landmarks.find((item) => item.id !== start)?.id
+      ?? "";
+    changeEnd(candidate);
   };
 
   const toggleWaypoint = (id: string) => {
@@ -209,7 +238,9 @@ export default function App() {
         );
         if (!isCurrent()) return;
         setSteps([...streamed]);
-        setStepIndex(Math.max(0, streamed.length - 1));
+        // Start the completed trace from its first expansion. The final route
+        // is revealed only after the learner reaches the last step.
+        setStepIndex(0);
         setSearchPayload(payload);
       } else if (runMode === "compare") {
         const payload = await compareRoutes(
@@ -231,7 +262,9 @@ export default function App() {
           return_to_start: returnToStart,
           criterion,
           traffic_profile: traffic,
-          compare_methods: waypoints.length <= 8,
+          compare_methods:
+            waypoints.length <= BRUTE_FORCE_LIMIT
+            && multiMethod !== "held_karp",
         }, controller.signal);
         if (!isCurrent()) return;
         setMultiPayload(payload);
@@ -308,7 +341,16 @@ export default function App() {
 
           {mode === "multi" && (
             <section className="control-section multi-controls">
-              <div className="label-row"><label>Waypoints</label><span>{waypoints.length}/8 exact</span></div>
+              <div className="label-row">
+                <label>Waypoints</label>
+                <span>
+                  {waypoints.length} selected · {waypoints.length <= BRUTE_FORCE_LIMIT
+                    ? "all methods available"
+                    : waypoints.length <= HELD_KARP_LIMIT
+                      ? "Held–Karp exact available"
+                      : "approximate only"}
+                </span>
+              </div>
               <div className="waypoint-list">
                 {bootstrap.landmarks.filter((item) => item.id !== start && item.id !== end).map((landmark) => (
                   <label className="check-row" key={landmark.id}>
@@ -319,14 +361,37 @@ export default function App() {
               </div>
               <label htmlFor="multi-method">Method</label>
               <select id="multi-method" value={multiMethod} onChange={(event) => { invalidateOutputs(); setMultiMethod(event.target.value); }}>
-                <option value="nearest_neighbor">Nearest Neighbor</option>
-                <option value="exact_bruteforce" disabled={waypoints.length > 8}>Exact Brute Force</option>
+                <option value="nearest_neighbor">Nearest Neighbor (approximate)</option>
+                <option value="exact_bruteforce" disabled={waypoints.length > BRUTE_FORCE_LIMIT}>Exact Brute Force (max 8)</option>
+                <option value="held_karp" disabled={waypoints.length > HELD_KARP_LIMIT}>Held–Karp Exact (max 12)</option>
               </select>
-              <label htmlFor="end">Fixed end</label>
-              <select id="end" value={end} onChange={(event) => changeEnd(event.target.value)} disabled={returnToStart}>
-                <option value="">None</option>
-                {bootstrap.landmarks.filter((item) => item.id !== start).map((landmark) => <option key={landmark.id} value={landmark.id}>{landmark.name}</option>)}
-              </select>
+              <p className="method-note">
+                {multiMethod === "nearest_neighbor"
+                  ? waypoints.length <= HELD_KARP_LIMIT
+                    ? "Fast greedy route; choose Held–Karp for a globally optimal visiting order."
+                    : "Fast greedy route; global optimality is not guaranteed. Exact methods are limited to 12 waypoints."
+                  : multiMethod === "held_karp"
+                    ? "Exact dynamic programming over the pairwise landmark costs."
+                    : "Exact permutation search intended for small teaching examples."}
+              </p>
+              <label className="toggle-row">
+                <input
+                  type="checkbox"
+                  checked={Boolean(end)}
+                  disabled={returnToStart}
+                  onChange={(event) => toggleFixedEnd(event.target.checked)}
+                />
+                <span>End at a specific place <small>(optional)</small></span>
+              </label>
+              {end && !returnToStart && (
+                <>
+                  <label htmlFor="end">Fixed end destination</label>
+                  <select id="end" value={end} onChange={(event) => changeEnd(event.target.value)}>
+                    {bootstrap.landmarks.filter((item) => item.id !== start).map((landmark) => <option key={landmark.id} value={landmark.id}>{landmark.name}</option>)}
+                  </select>
+                  <p className="method-note">All selected waypoints are visited first; the route then finishes here.</p>
+                </>
+              )}
               <label className="toggle-row"><input type="checkbox" checked={returnToStart} onChange={(event) => { invalidateOutputs(); setReturnToStart(event.target.checked); if (event.target.checked) setEnd(""); }} /><span>Return to start</span></label>
             </section>
           )}
@@ -342,6 +407,15 @@ export default function App() {
             <select id="traffic" value={traffic} onChange={(event) => { invalidateOutputs(); setTraffic(event.target.value); }}>
               {Object.keys(bootstrap.traffic_profiles).map((key) => <option key={key} value={key}>{key.replace("_", " ")}</option>)}
             </select>
+            <label className="toggle-row condition-toggle">
+              <input
+                type="checkbox"
+                checked={colorRouteByConditions}
+                onChange={(event) => setColorRouteByConditions(event.target.checked)}
+              />
+              <span>Color route by traffic &amp; risk</span>
+            </label>
+            <p className="method-note">Uses the selected simulated traffic profile, not live traffic.</p>
           </section>
 
           {networkWarning && (
@@ -363,11 +437,11 @@ export default function App() {
           <button
             className={`map-overlay-toggle ${showBaseMap ? "active" : ""}`}
             onClick={() => setShowBaseMap((prev) => !prev)}
-            title="Toggle OpenStreetMap background map layer"
-            aria-label="Toggle OpenStreetMap background map layer"
+            title="Toggle minimal background map layer"
+            aria-label="Toggle minimal background map layer"
           >
             <Layers size={16} />
-            <span>{showBaseMap ? "OpenStreetMap On" : "OpenStreetMap Off"}</span>
+            <span>{showBaseMap ? "Minimal map On" : "Minimal map Off"}</span>
           </button>
           <MapView
             bootstrap={bootstrap}
@@ -376,11 +450,15 @@ export default function App() {
             currentStep={currentStep}
             selectedLandmarks={selectedLandmarks}
             showBaseMap={showBaseMap}
+            routeSegments={activeRouteSegments}
+            colorRouteByConditions={colorRouteByConditions}
           />
           <div className="map-legend">
             <span><i className="legend-line boundary" />Boundary</span>
             <span><i className="legend-line road" />Road network</span>
-            <span><i className="legend-line route" />Selected route</span>
+            {colorRouteByConditions
+              ? <span className="condition-legend"><b>Low</b><i /><b>High traffic / risk</b></span>
+              : <span><i className="legend-line route" />Selected route</span>}
             <span><i className="legend-dot landmark" />Landmark center</span>
             <span><i className="legend-dot access" />Entrance / road access</span>
             <span><i className="legend-line access" />Access connector</span>

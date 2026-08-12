@@ -35,6 +35,7 @@ export default function TraceControls({
   const frontierCount = typeof current.details.frontier_count === "number"
     ? current.details.frontier_count
     : current.frontier.length;
+  const displayedFrontierCount = current.frontier.length;
   return (
     <section className="trace-section" aria-label="Search animation">
       <div className="section-heading">
@@ -49,6 +50,11 @@ export default function TraceControls({
         <span><b>{visitedCount}</b> visited</span>
         <span><b>{frontierCount}</b> frontier</span>
       </div>
+      {frontierCount > displayedFrontierCount && (
+        <p className="trace-truncation-note">
+          Showing {displayedFrontierCount} of {frontierCount} frontier nodes on the map.
+        </p>
+      )}
       {details.length > 0 && (
         <dl className="trace-details">
           {details.map(([key, value]) => (

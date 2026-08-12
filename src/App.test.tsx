@@ -25,14 +25,16 @@ vi.mock("./api", () => ({
 }));
 
 vi.mock("./components/MapView", () => ({
-  default: ({ selectedLandmarks, route }: {
+  default: ({ selectedLandmarks, route, colorRouteByConditions }: {
     selectedLandmarks: Landmark[];
     route: GeoJsonFeature | null;
+    colorRouteByConditions: boolean;
   }) => (
     <div
       data-testid="map-view"
       data-landmarks={selectedLandmarks.map((item) => item.id).join(",")}
       data-route-points={route?.geometry.coordinates.length ?? 0}
+      data-condition-colors={String(colorRouteByConditions)}
     />
   ),
 }));
@@ -104,19 +106,52 @@ describe("App request lifecycle", () => {
     expect(screen.queryByText("Path found")).not.toBeInTheDocument();
   });
 
+  it("replays a completed trace from the first step and reveals the route at the end", async () => {
+    mockedStream.mockImplementation(async (_request, onStep) => {
+      onStep(stepFixture);
+      onStep({
+        ...stepFixture,
+        index: 1,
+        current_node: "node-1",
+        visited: ["node-0", "node-1"],
+      });
+      return searchPayloadFixture("astar");
+    });
+    await loadApp();
+
+    fireEvent.click(screen.getByRole("button", { name: "Find route" }));
+    expect(await screen.findByText("Path found")).toBeInTheDocument();
+    expect(screen.getByText("1 / 2")).toBeInTheDocument();
+    expect(screen.getByTestId("map-view")).toHaveAttribute("data-route-points", "0");
+
+    fireEvent.click(screen.getByTitle("Next step"));
+    expect(screen.getByTestId("map-view")).toHaveAttribute("data-route-points", "3");
+  });
+
+  it("offers the simplified basemap toggle by default", async () => {
+    await loadApp();
+    const toggle = screen.getByRole("button", { name: "Toggle minimal background map layer" });
+    expect(toggle).toHaveTextContent("Minimal map On");
+    fireEvent.click(toggle);
+    expect(toggle).toHaveTextContent("Minimal map Off");
+  });
+
   it("clears a fixed end that becomes the Multi start", async () => {
     await loadApp();
     fireEvent.click(screen.getByRole("tab", { name: "Multi" }));
-    const endSelect = screen.getByLabelText("Fixed end") as HTMLSelectElement;
+    fireEvent.click(screen.getByRole("checkbox", { name: /End at a specific place/ }));
+    const endSelect = screen.getByLabelText("Fixed end destination") as HTMLSelectElement;
     fireEvent.change(endSelect, { target: { value: "ben_thanh_market" } });
     fireEvent.change(screen.getByLabelText("Start"), { target: { value: "ben_thanh_market" } });
-    expect(endSelect.value).toBe("");
+    expect(screen.queryByLabelText("Fixed end destination")).not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /End at a specific place/ })).not.toBeChecked();
   });
 
   it("moves a selected fixed end out of waypoints and sends no duplicate", async () => {
     await loadApp();
     fireEvent.click(screen.getByRole("tab", { name: "Multi" }));
-    fireEvent.change(screen.getByLabelText("Fixed end"), { target: { value: "ben_thanh_market" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: /End at a specific place/ }));
+    fireEvent.change(screen.getByLabelText("Fixed end destination"), { target: { value: "ben_thanh_market" } });
 
     expect(screen.queryByRole("checkbox", { name: "Ben Thanh Market" })).not.toBeInTheDocument();
     const selected = screen.getByTestId("map-view").getAttribute("data-landmarks")?.split(",") ?? [];
@@ -127,6 +162,27 @@ describe("App request lifecycle", () => {
     const request = mockedMulti.mock.calls[0][0];
     expect(request.end).toBe("ben_thanh_market");
     expect(request.waypoints).not.toContain("ben_thanh_market");
+  });
+
+  it("toggles simulated traffic and risk coloring independently of route inputs", async () => {
+    await loadApp();
+    const checkbox = screen.getByRole("checkbox", { name: "Color route by traffic & risk" });
+    expect(screen.getByTestId("map-view")).toHaveAttribute("data-condition-colors", "false");
+    fireEvent.click(checkbox);
+    expect(screen.getByTestId("map-view")).toHaveAttribute("data-condition-colors", "true");
+    expect(screen.getByText(/not live traffic/i)).toBeInTheDocument();
+  });
+
+  it("offers Held-Karp and avoids the brute-force comparison for that method", async () => {
+    await loadApp();
+    fireEvent.click(screen.getByRole("tab", { name: "Multi" }));
+    fireEvent.change(screen.getByLabelText("Method"), { target: { value: "held_karp" } });
+    fireEvent.click(screen.getByRole("button", { name: "Optimize route" }));
+    await waitFor(() => expect(mockedMulti).toHaveBeenCalled());
+    expect(mockedMulti.mock.calls[0][0]).toMatchObject({
+      method: "held_karp",
+      compare_methods: false,
+    });
   });
 
   it("keeps the app usable when the optional network overlay fails", async () => {

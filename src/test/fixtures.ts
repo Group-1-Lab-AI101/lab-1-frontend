@@ -137,6 +137,7 @@ export const multiPayloadFixture = (
     properties: {},
     geometry: { type: "LineString", coordinates: [[106.69, 10.77], [106.692, 10.772]] },
   },
+  route_segments: [],
   comparison: null,
   explanation: {
     headline: "Route optimized",

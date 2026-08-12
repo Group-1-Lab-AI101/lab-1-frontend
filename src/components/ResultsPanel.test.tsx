@@ -35,17 +35,46 @@ describe("ResultsPanel", () => {
     expect(screen.getByText("expand")).toBeInTheDocument();
   });
 
+  it("explains truncated frontier rendering and traced runtime", () => {
+    const truncatedStep = {
+      ...stepFixture,
+      details: { ...stepFixture.details, frontier_count: 140 },
+    };
+    render(
+      <ResultsPanel
+        {...baseProps}
+        searchPayload={searchPayloadFixture("astar")}
+        steps={[truncatedStep]}
+      />,
+    );
+    expect(screen.getByText("Runtime + trace")).toBeInTheDocument();
+    expect(screen.getByText("Showing 1 of 140 frontier nodes on the map.")).toBeInTheDocument();
+  });
+
   it("shows fixed-end and route-closure constraints for multi routes", () => {
     const { rerender } = render(
       <ResultsPanel {...baseProps} multiPayload={multiPayloadFixture()} />,
     );
-    expect(screen.getByText("Fixed end")).toBeInTheDocument();
+    expect(screen.getByText("End rule")).toBeInTheDocument();
+    expect(screen.getByText("Fixed: Saigon Zoo")).toBeInTheDocument();
     expect(screen.getAllByText("Saigon Zoo").length).toBeGreaterThan(0);
+    expect(screen.getByText(/fixed end/)).toBeInTheDocument();
     expect(screen.getByText("Open route")).toBeInTheDocument();
 
     rerender(
       <ResultsPanel {...baseProps} multiPayload={multiPayloadFixture(null, true)} />,
     );
-    expect(screen.getByText("Return to start")).toBeInTheDocument();
+    expect(screen.getByText("Closed loop")).toBeInTheDocument();
+    expect(screen.getAllByText("Start: Notre Dame Cathedral").length).toBeGreaterThan(0);
+  });
+
+  it("humanizes multi-route method and optimality labels", () => {
+    const payload = multiPayloadFixture(null, false);
+    payload.explanation.optimality_note = "approximate_not_guaranteed";
+    render(<ResultsPanel {...baseProps} multiPayload={payload} />);
+    expect(screen.getByText("Nearest Neighbor (approximate)")).toBeInTheDocument();
+    expect(screen.getByText(/Approximate route/)).toBeInTheDocument();
+    expect(screen.queryByText("approximate_not_guaranteed")).not.toBeInTheDocument();
+    expect(screen.getByText("Selected waypoints")).toBeInTheDocument();
   });
 });
