@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import {
@@ -115,17 +115,28 @@ describe("App request lifecycle", () => {
         current_node: "node-1",
         visited: ["node-0", "node-1"],
       });
+      onStep({
+        ...stepFixture,
+        index: 2,
+        current_node: "node-2",
+        visited: ["node-0", "node-1", "node-2"],
+      });
       return searchPayloadFixture("astar");
     });
     await loadApp();
 
     fireEvent.click(screen.getByRole("button", { name: "Find route" }));
     expect(await screen.findByText("Path found")).toBeInTheDocument();
-    expect(screen.getByText("1 / 2")).toBeInTheDocument();
+    expect(screen.getByText("1 / 3")).toBeInTheDocument();
     expect(screen.getByTestId("map-view")).toHaveAttribute("data-route-points", "0");
 
     fireEvent.click(screen.getByTitle("Next step"));
+    expect(screen.getByText("2 / 3")).toBeInTheDocument();
+    fireEvent.click(screen.getByTitle("Next step"));
     expect(screen.getByTestId("map-view")).toHaveAttribute("data-route-points", "3");
+    fireEvent.click(screen.getByTitle("Previous step"));
+    expect(screen.getByText("2 / 3")).toBeInTheDocument();
+    expect(screen.getByTestId("map-view")).toHaveAttribute("data-route-points", "0");
   });
 
   it("offers the simplified basemap toggle by default", async () => {
@@ -134,6 +145,33 @@ describe("App request lifecycle", () => {
     expect(toggle).toHaveTextContent("Minimal map On");
     fireEvent.click(toggle);
     expect(toggle).toHaveTextContent("Minimal map Off");
+  });
+
+  it("sorts every location selector alphabetically by displayed name", async () => {
+    await loadApp();
+    const startNames = within(screen.getByLabelText("Start"))
+      .getAllByRole("option")
+      .map((option) => option.textContent);
+    expect(startNames).toEqual([
+      "Bach Dang Wharf",
+      "Ben Thanh Market",
+      "Fine Arts Museum",
+      "Nguyen Hue Walking Street",
+      "Notre Dame Cathedral",
+      "Saigon Zoo",
+    ]);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Multi" }));
+    const waypointNames = screen.getAllByRole("checkbox")
+      .filter((checkbox) => checkbox.closest("label")?.classList.contains("check-row"))
+      .map((checkbox) => checkbox.getAttribute("aria-label") ?? checkbox.parentElement?.textContent?.trim());
+    expect(waypointNames).toEqual([
+      "Bach Dang Wharf",
+      "Ben Thanh Market",
+      "Fine Arts Museum",
+      "Nguyen Hue Walking Street",
+      "Saigon Zoo",
+    ]);
   });
 
   it("clears a fixed end that becomes the Multi start", async () => {
@@ -145,6 +183,28 @@ describe("App request lifecycle", () => {
     fireEvent.change(screen.getByLabelText("Start"), { target: { value: "ben_thanh_market" } });
     expect(screen.queryByLabelText("Fixed end destination")).not.toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: /End at a specific place/ })).not.toBeChecked();
+  });
+
+  it("switches directly between a fixed end and returning to start", async () => {
+    await loadApp();
+    fireEvent.click(screen.getByRole("tab", { name: "Multi" }));
+    const fixedEnd = screen.getByRole("checkbox", { name: /End at a specific place/ });
+    const returnToStart = screen.getByRole("checkbox", { name: "Return to start" });
+
+    fireEvent.click(fixedEnd);
+    expect(fixedEnd).toBeChecked();
+    expect(returnToStart).not.toBeChecked();
+    expect(screen.getByLabelText("Fixed end destination")).toBeInTheDocument();
+
+    fireEvent.click(returnToStart);
+    expect(returnToStart).toBeChecked();
+    expect(fixedEnd).not.toBeChecked();
+    expect(screen.queryByLabelText("Fixed end destination")).not.toBeInTheDocument();
+
+    fireEvent.click(fixedEnd);
+    expect(fixedEnd).toBeChecked();
+    expect(returnToStart).not.toBeChecked();
+    expect(screen.getByLabelText("Fixed end destination")).toBeInTheDocument();
   });
 
   it("moves a selected fixed end out of waypoints and sends no duplicate", async () => {
@@ -173,15 +233,17 @@ describe("App request lifecycle", () => {
     expect(screen.getByText(/not live traffic/i)).toBeInTheDocument();
   });
 
-  it("offers Held-Karp and avoids the brute-force comparison for that method", async () => {
+  it("offers only nearest-neighbor and brute-force multi-route methods", async () => {
     await loadApp();
     fireEvent.click(screen.getByRole("tab", { name: "Multi" }));
-    fireEvent.change(screen.getByLabelText("Method"), { target: { value: "held_karp" } });
+    const method = screen.getByLabelText("Method");
+    expect(within(method).getAllByRole("option")).toHaveLength(2);
+    expect(screen.queryByRole("option", { name: /Held/ })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Optimize route" }));
     await waitFor(() => expect(mockedMulti).toHaveBeenCalled());
     expect(mockedMulti.mock.calls[0][0]).toMatchObject({
-      method: "held_karp",
-      compare_methods: false,
+      method: "nearest_neighbor",
+      compare_methods: true,
     });
   });
 

@@ -29,7 +29,6 @@ const formatNumber = (value: number | null | undefined, digits = 2) =>
 const multiMethodLabel = (method: string) => ({
   nearest_neighbor: "Nearest Neighbor (approximate)",
   exact_bruteforce: "Exact Brute Force",
-  held_karp: "Held–Karp Exact",
 }[method] ?? method.replaceAll("_", " "));
 
 const optimalityLabel = (value: string) => ({
@@ -138,12 +137,6 @@ export default function ResultsPanel(props: ResultsPanelProps) {
               {routeRoads.slice(0, 7).map((name) => <span key={name}>{name}</span>)}
               {routeRoads.length > 7 && <span>+{routeRoads.length - 7} roads</span>}
             </div>
-            {searchPayload.result.path.length > 0 && (
-              <details className="node-path">
-                <summary>Graph node path</summary>
-                <code>{searchPayload.result.path.join(" -> ")}</code>
-              </details>
-            )}
           </section>
           <section className="result-section">
             <div className="section-heading"><span>Why this route</span></div>

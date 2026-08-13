@@ -2,7 +2,7 @@ import {
   Pause,
   Play,
   RotateCcw,
-  SkipBack,
+  StepBack,
   StepForward,
 } from "lucide-react";
 import type { SearchStep } from "../types";
@@ -75,8 +75,12 @@ export default function TraceControls({
         aria-label="Trace step"
       />
       <div className="icon-row">
-        <button className="icon-button" title="First step" onClick={() => onIndexChange(0)}>
-          <SkipBack size={17} />
+        <button
+          className="icon-button"
+          title="Previous step"
+          onClick={() => onIndexChange(Math.max(index - 1, 0))}
+        >
+          <StepBack size={17} />
         </button>
         <button
           className="icon-button primary-icon"

@@ -35,6 +35,12 @@ describe("ResultsPanel", () => {
     expect(screen.getByText("expand")).toBeInTheDocument();
   });
 
+  it("does not expose the graph node path in the path-found block", () => {
+    render(<ResultsPanel {...baseProps} searchPayload={searchPayloadFixture()} />);
+    expect(screen.getByText("Path found")).toBeInTheDocument();
+    expect(screen.queryByText("Graph node path")).not.toBeInTheDocument();
+  });
+
   it("explains truncated frontier rendering and traced runtime", () => {
     const truncatedStep = {
       ...stepFixture,

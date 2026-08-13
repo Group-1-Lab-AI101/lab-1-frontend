@@ -142,9 +142,6 @@ select:disabled { color: #8c9690; background: #ecefed; }
 .route-endpoints strong:last-child { text-align: right; }
 .road-chain { display: flex; flex-wrap: wrap; gap: 5px 9px; color: #536159; font-size: 11px; line-height: 1.4; }
 .road-chain span:not(:last-child)::after { content: " >"; color: #b24237; }
-.node-path { margin-top: 10px; color: #617068; font-size: 10px; }
-.node-path summary { cursor: pointer; font-weight: 700; }
-.node-path code { display: block; max-height: 84px; margin-top: 7px; overflow: auto; color: #3f4d45; font-size: 9px; line-height: 1.45; white-space: normal; overflow-wrap: anywhere; }
 .congestion-list { display: grid; gap: 4px; margin-top: 11px; padding-left: 9px; border-left: 3px solid #d49a2f; color: #635a46; font-size: 10px; }
 .congestion-list strong { color: #4f4633; text-transform: uppercase; }
 .alternative-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; color: #66736c; font-size: 10px; }

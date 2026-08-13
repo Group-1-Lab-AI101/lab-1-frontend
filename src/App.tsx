@@ -34,7 +34,16 @@ const DEFAULT_WAYPOINTS = [
   "fine_arts_museum",
 ];
 const BRUTE_FORCE_LIMIT = 8;
-const HELD_KARP_LIMIT = 12;
+const VIETNAMESE_NAME_COLLATOR = new Intl.Collator("vi", {
+  usage: "sort",
+  sensitivity: "base",
+  numeric: true,
+});
+
+export const sortLandmarksByName = (landmarks: Landmark[]) =>
+  [...landmarks].sort((left, right) =>
+    VIETNAMESE_NAME_COLLATOR.compare(left.name, right.name),
+  );
 
 const errorMessage = (reason: unknown) => reason instanceof Error ? reason.message : String(reason);
 const isAbortError = (reason: unknown) => reason instanceof DOMException && reason.name === "AbortError";
@@ -49,7 +58,7 @@ export default function App() {
   const [criterion, setCriterion] = useState("balanced");
   const [traffic, setTraffic] = useState("normal");
   const [waypoints, setWaypoints] = useState<string[]>(DEFAULT_WAYPOINTS);
-  const [multiMethod, setMultiMethod] = useState("held_karp");
+  const [multiMethod, setMultiMethod] = useState("nearest_neighbor");
   const [returnToStart, setReturnToStart] = useState(false);
   const [end, setEnd] = useState("");
   const [searchPayload, setSearchPayload] = useState<SearchPayload | null>(null);
@@ -136,8 +145,7 @@ export default function App() {
 
   useEffect(() => {
     const exceedsMethodLimit =
-      (multiMethod === "exact_bruteforce" && waypoints.length > BRUTE_FORCE_LIMIT)
-      || (multiMethod === "held_karp" && waypoints.length > HELD_KARP_LIMIT);
+      multiMethod === "exact_bruteforce" && waypoints.length > BRUTE_FORCE_LIMIT;
     if (exceedsMethodLimit) {
       setMultiMethod("nearest_neighbor");
     }
@@ -145,6 +153,10 @@ export default function App() {
 
   const landmarkById = useMemo(
     () => new Map(bootstrap?.landmarks.map((item) => [item.id, item]) ?? []),
+    [bootstrap],
+  );
+  const sortedLandmarks = useMemo(
+    () => sortLandmarksByName(bootstrap?.landmarks ?? []),
     [bootstrap],
   );
 
@@ -198,10 +210,17 @@ export default function App() {
       changeEnd("");
       return;
     }
+    setReturnToStart(false);
     const candidate = [...waypoints].reverse().find((id) => id !== start)
-      ?? bootstrap?.landmarks.find((item) => item.id !== start)?.id
+      ?? sortedLandmarks.find((item) => item.id !== start)?.id
       ?? "";
     changeEnd(candidate);
+  };
+
+  const toggleReturnToStart = (enabled: boolean) => {
+    invalidateOutputs();
+    setReturnToStart(enabled);
+    if (enabled) setEnd("");
   };
 
   const toggleWaypoint = (id: string) => {
@@ -262,9 +281,7 @@ export default function App() {
           return_to_start: returnToStart,
           criterion,
           traffic_profile: traffic,
-          compare_methods:
-            waypoints.length <= BRUTE_FORCE_LIMIT
-            && multiMethod !== "held_karp",
+          compare_methods: waypoints.length <= BRUTE_FORCE_LIMIT,
         }, controller.signal);
         if (!isCurrent()) return;
         setMultiPayload(payload);
@@ -316,14 +333,14 @@ export default function App() {
           <section className="control-section">
             <label htmlFor="start">Start</label>
             <select id="start" value={start} onChange={(event) => changeStart(event.target.value)}>
-              {bootstrap.landmarks.map((landmark) => <option key={landmark.id} value={landmark.id}>{landmark.name}</option>)}
+              {sortedLandmarks.map((landmark) => <option key={landmark.id} value={landmark.id}>{landmark.name}</option>)}
             </select>
 
             {mode !== "multi" && (
               <>
                 <div className="label-row"><label htmlFor="goal">Destination</label><button className="icon-button" title="Swap locations" onClick={() => { const previousStart = start; changeStart(goal); setGoal(previousStart); }}><ArrowLeftRight size={16} /></button></div>
                 <select id="goal" value={goal} onChange={(event) => { invalidateOutputs(); setGoal(event.target.value); }}>
-                  {bootstrap.landmarks.map((landmark) => <option key={landmark.id} value={landmark.id}>{landmark.name}</option>)}
+                  {sortedLandmarks.map((landmark) => <option key={landmark.id} value={landmark.id}>{landmark.name}</option>)}
                 </select>
               </>
             )}
@@ -346,13 +363,11 @@ export default function App() {
                 <span>
                   {waypoints.length} selected · {waypoints.length <= BRUTE_FORCE_LIMIT
                     ? "all methods available"
-                    : waypoints.length <= HELD_KARP_LIMIT
-                      ? "Held–Karp exact available"
-                      : "approximate only"}
+                    : "approximate only"}
                 </span>
               </div>
               <div className="waypoint-list">
-                {bootstrap.landmarks.filter((item) => item.id !== start && item.id !== end).map((landmark) => (
+                {sortedLandmarks.filter((item) => item.id !== start && item.id !== end).map((landmark) => (
                   <label className="check-row" key={landmark.id}>
                     <input type="checkbox" checked={waypoints.includes(landmark.id)} onChange={() => toggleWaypoint(landmark.id)} />
                     <span>{landmark.name}</span>
@@ -363,22 +378,18 @@ export default function App() {
               <select id="multi-method" value={multiMethod} onChange={(event) => { invalidateOutputs(); setMultiMethod(event.target.value); }}>
                 <option value="nearest_neighbor">Nearest Neighbor (approximate)</option>
                 <option value="exact_bruteforce" disabled={waypoints.length > BRUTE_FORCE_LIMIT}>Exact Brute Force (max 8)</option>
-                <option value="held_karp" disabled={waypoints.length > HELD_KARP_LIMIT}>Held–Karp Exact (max 12)</option>
               </select>
               <p className="method-note">
                 {multiMethod === "nearest_neighbor"
-                  ? waypoints.length <= HELD_KARP_LIMIT
-                    ? "Fast greedy route; choose Held–Karp for a globally optimal visiting order."
-                    : "Fast greedy route; global optimality is not guaranteed. Exact methods are limited to 12 waypoints."
-                  : multiMethod === "held_karp"
-                    ? "Exact dynamic programming over the pairwise landmark costs."
-                    : "Exact permutation search intended for small teaching examples."}
+                  ? waypoints.length <= BRUTE_FORCE_LIMIT
+                    ? "Fast greedy route; choose Exact Brute Force for a globally optimal visiting order."
+                    : "Fast greedy route; global optimality is not guaranteed. Exact search is limited to 8 waypoints."
+                  : "Exact permutation search intended for small teaching examples."}
               </p>
               <label className="toggle-row">
                 <input
                   type="checkbox"
                   checked={Boolean(end)}
-                  disabled={returnToStart}
                   onChange={(event) => toggleFixedEnd(event.target.checked)}
                 />
                 <span>End at a specific place <small>(optional)</small></span>
@@ -387,12 +398,12 @@ export default function App() {
                 <>
                   <label htmlFor="end">Fixed end destination</label>
                   <select id="end" value={end} onChange={(event) => changeEnd(event.target.value)}>
-                    {bootstrap.landmarks.filter((item) => item.id !== start).map((landmark) => <option key={landmark.id} value={landmark.id}>{landmark.name}</option>)}
+                    {sortedLandmarks.filter((item) => item.id !== start).map((landmark) => <option key={landmark.id} value={landmark.id}>{landmark.name}</option>)}
                   </select>
                   <p className="method-note">All selected waypoints are visited first; the route then finishes here.</p>
                 </>
               )}
-              <label className="toggle-row"><input type="checkbox" checked={returnToStart} onChange={(event) => { invalidateOutputs(); setReturnToStart(event.target.checked); if (event.target.checked) setEnd(""); }} /><span>Return to start</span></label>
+              <label className="toggle-row"><input type="checkbox" checked={returnToStart} onChange={(event) => toggleReturnToStart(event.target.checked)} /><span>Return to start</span></label>
             </section>
           )}
 
